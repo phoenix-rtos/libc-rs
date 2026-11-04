@@ -19,7 +19,14 @@ pub type pid_t = i32;
 pub type in_addr_t = u32;
 pub type in_port_t = u16;
 pub type sighandler_t = size_t;
-pub type cc_t = c_uchar;
+cfg_if! {
+    if #[cfg(target_os = "phoenix")] {
+        // `termios.h`: `typedef unsigned cc_t;`
+        pub type cc_t = c_uint;
+    } else {
+        pub type cc_t = c_uchar;
+    }
+}
 
 cfg_if! {
     if #[cfg(any(
@@ -29,7 +36,11 @@ cfg_if! {
     ))] {
         pub type uid_t = c_ushort;
         pub type gid_t = c_ushort;
-    } else if #[cfg(any(target_os = "nto", target_os = "qnx"))] {
+    } else if #[cfg(any(
+        target_os = "nto",
+        target_os = "qnx",
+        target_os = "phoenix"
+    ))] {
         pub type uid_t = i32;
         pub type gid_t = i32;
     } else {
@@ -46,7 +57,7 @@ extern_ty! {
 unsafe impl Send for DIR {}
 unsafe impl Sync for DIR {}
 
-#[cfg(not(target_os = "nuttx"))]
+#[cfg(not(any(target_os = "nuttx", target_os = "phoenix")))]
 pub type locale_t = *mut c_void;
 
 s2! {
@@ -90,6 +101,7 @@ s2! {
         pub tv_nsec: i64,
         #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
         pub tv_nsec: c_long,
+        #[cfg(not(target_os = "phoenix"))]
         #[cfg(all(musl32_time64, target_endian = "little"))]
         __pad0: Padding<u32>,
     }
@@ -101,6 +113,7 @@ s2! {
     }
 
     #[exhaustive] // FIXME(exhaustive): review for 1.0
+    #[cfg(not(target_os = "phoenix"))]
     pub struct rusage {
         pub ru_utime: timeval,
         pub ru_stime: timeval,
@@ -198,6 +211,7 @@ s2! {
     }
 
     #[exhaustive] // FIXME(exhaustive): review for 1.0
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg(not(target_os = "cygwin"))]
     pub struct linger {
         pub l_onoff: c_int,
@@ -211,8 +225,9 @@ s2! {
         pub sival_ptr: *mut c_void,
     }
 
-    // <sys/time.h>
+    // <sys/time.h>; Phoenix has no interval timers.
     #[exhaustive] // FIXME(exhaustive): review for 1.0
+    #[cfg(not(target_os = "phoenix"))]
     pub struct itimerval {
         pub it_interval: crate::timeval,
         pub it_value: crate::timeval,
@@ -405,6 +420,8 @@ cfg_if! {
 cfg_if! {
     if #[cfg(any(target_os = "nto", target_os = "qnx", target_os = "aix"))] {
         pub const FNM_PERIOD: c_int = 1 << 1;
+    } else if #[cfg(target_os = "phoenix")] {
+        pub const FNM_PERIOD: c_int = 0x4;
     } else {
         pub const FNM_PERIOD: c_int = 1 << 2;
     }
@@ -418,6 +435,8 @@ cfg_if! {
         target_os = "netbsd"
     ))] {
         pub const FNM_CASEFOLD: c_int = 1 << 3;
+    } else if #[cfg(target_os = "phoenix")] {
+        pub const FNM_CASEFOLD: c_int = 0x20;
     } else if #[cfg(not(target_os = "aix"))] {
         pub const FNM_CASEFOLD: c_int = 1 << 4;
     }
@@ -434,6 +453,8 @@ cfg_if! {
         target_os = "netbsd",
     ))] {
         pub const FNM_PATHNAME: c_int = 1 << 1;
+    } else if #[cfg(target_os = "phoenix")] {
+        pub const FNM_PATHNAME: c_int = 0x2;
     } else {
         pub const FNM_PATHNAME: c_int = 1 << 0;
     }
@@ -450,6 +471,8 @@ cfg_if! {
         target_os = "cygwin",
     ))] {
         pub const FNM_NOESCAPE: c_int = 1 << 0;
+    } else if #[cfg(target_os = "phoenix")] {
+        pub const FNM_NOESCAPE: c_int = 0x8;
     } else if #[cfg(any(target_os = "nto", target_os = "qnx"))] {
         pub const FNM_NOESCAPE: c_int = 1 << 2;
     } else if #[cfg(target_os = "aix")] {
@@ -655,6 +678,11 @@ cfg_if! {
         #[link(name = "bsd")]
         #[link(name = "pthread")]
         extern "C" {}
+    } else if #[cfg(target_os = "phoenix")] {
+        // Phoenix ships one static archive; libc.a/libm.a/libpthread.a in the
+        // sysroot are copies of it, and there is no librt.
+        #[link(name = "phoenix")]
+        extern "C" {}
     } else {
         #[link(name = "c")]
         #[link(name = "m")]
@@ -667,7 +695,8 @@ cfg_if! {
 cfg_if! {
     if #[cfg(not(any(
         target_os = "hurd",
-        all(target_os = "linux", target_env = "gnu")
+        all(target_os = "linux", target_env = "gnu"),
+        target_os = "phoenix",
     )))] {
         extern_ty! {
             pub type fpos_t; // FIXME(unix): fill this out with a struct
@@ -822,18 +851,23 @@ extern "C" {
     )]
     pub fn strerror(n: c_int) -> *mut c_char;
     pub fn strtok(s: *mut c_char, t: *const c_char) -> *mut c_char;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn strtok_r(s: *mut c_char, t: *const c_char, p: *mut *mut c_char) -> *mut c_char;
     pub fn strxfrm(s: *mut c_char, ct: *const c_char, n: size_t) -> size_t;
     pub fn strsignal(sig: c_int) -> *mut c_char;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn wcslen(buf: *const wchar_t) -> size_t;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn wcstombs(dest: *mut c_char, src: *const wchar_t, n: size_t) -> size_t;
 
     pub fn memchr(cx: *const c_void, c: c_int, n: size_t) -> *mut c_void;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn wmemchr(cx: *const wchar_t, c: wchar_t, n: size_t) -> *mut wchar_t;
     pub fn memcmp(cx: *const c_void, ct: *const c_void, n: size_t) -> c_int;
     pub fn memcpy(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
     pub fn memmove(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
     pub fn memset(dest: *mut c_void, c: c_int, n: size_t) -> *mut c_void;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn memccpy(dest: *mut c_void, src: *const c_void, c: c_int, n: size_t) -> *mut c_void;
 }
 
@@ -1082,9 +1116,10 @@ extern "C" {
     )]
     pub fn rewinddir(dirp: *mut crate::DIR);
 
+    #[cfg(not(target_os = "phoenix"))]
     pub fn fchmodat(dirfd: c_int, pathname: *const c_char, mode: mode_t, flags: c_int) -> c_int;
     pub fn fchown(fd: c_int, owner: crate::uid_t, group: crate::gid_t) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn fchownat(
         dirfd: c_int,
         pathname: *const c_char,
@@ -1092,6 +1127,7 @@ extern "C" {
         group: crate::gid_t,
         flags: c_int,
     ) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(gnu_file_offset_bits64, link_name = "openat64")]
     pub fn openat(dirfd: c_int, pathname: *const c_char, flags: c_int, ...) -> c_int;
     #[cfg_attr(
@@ -1107,10 +1143,10 @@ extern "C" {
         all(not(gnu_time_bits64), gnu_file_offset_bits64),
         link_name = "fstatat64"
     )]
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     #[cfg_attr(musl_redir_time64, link_name = "__fstatat_time64")]
     pub fn fstatat(dirfd: c_int, pathname: *const c_char, buf: *mut stat, flags: c_int) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn linkat(
         olddirfd: c_int,
         oldpath: *const c_char,
@@ -1118,18 +1154,18 @@ extern "C" {
         newpath: *const c_char,
         flags: c_int,
     ) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn mkdirat(dirfd: c_int, pathname: *const c_char, mode: mode_t) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn renameat(
         olddirfd: c_int,
         oldpath: *const c_char,
         newdirfd: c_int,
         newpath: *const c_char,
     ) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn symlinkat(target: *const c_char, newdirfd: c_int, linkpath: *const c_char) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn unlinkat(dirfd: c_int, pathname: *const c_char, flags: c_int) -> c_int;
 
     pub fn access(path: *const c_char, amode: c_int) -> c_int;
@@ -1206,7 +1242,9 @@ extern "C" {
     )]
     pub fn pause() -> c_int;
     pub fn pipe(fds: *mut c_int) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn posix_memalign(memptr: *mut *mut c_void, align: size_t, size: size_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn aligned_alloc(alignment: size_t, size: size_t) -> *mut c_void;
     #[cfg_attr(
         all(target_os = "macos", target_arch = "x86"),
@@ -1220,7 +1258,9 @@ extern "C" {
     pub fn setpgid(pid: pid_t, pgid: pid_t) -> c_int;
     pub fn setsid() -> pid_t;
     pub fn setuid(uid: uid_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn setreuid(ruid: uid_t, euid: uid_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn setregid(rgid: gid_t, egid: gid_t) -> c_int;
     #[cfg_attr(
         all(target_os = "macos", target_arch = "x86"),
@@ -1248,6 +1288,7 @@ extern "C" {
     )]
     pub fn ttyname_r(fd: c_int, buf: *mut c_char, buflen: size_t) -> c_int;
     pub fn unlink(c: *const c_char) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(target_os = "macos", target_arch = "x86"),
         link_name = "wait$UNIX2003"
@@ -1292,9 +1333,13 @@ extern "C" {
     )]
     pub fn killpg(pgrp: pid_t, sig: c_int) -> c_int;
 
+    #[cfg(not(target_os = "phoenix"))]
     pub fn mlock(addr: *const c_void, len: size_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn munlock(addr: *const c_void, len: size_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn mlockall(flags: c_int) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn munlockall() -> c_int;
 
     #[cfg_attr(
@@ -1510,10 +1555,14 @@ extern "C" {
     #[cfg_attr(gnu_time_bits64, link_name = "__utimes64")]
     #[cfg_attr(musl_redir_time64, link_name = "__utimes_time64")]
     pub fn utimes(filename: *const c_char, times: *const crate::timeval) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn dlerror() -> *mut c_char;
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(musl_redir_time64, link_name = "__dlsym_time64")]
     pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn dlclose(handle: *mut c_void) -> c_int;
 
     #[cfg(not(all(target_arch = "powerpc", target_vendor = "nintendo")))]
@@ -1548,7 +1597,7 @@ extern "C" {
     )]
     #[cfg_attr(target_vendor = "apple", link_name = "res_9_init")]
     #[cfg_attr(target_os = "aix", link_name = "_res_init")]
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn res_init() -> c_int;
 
     #[cfg_attr(target_os = "netbsd", link_name = "__gmtime_r50")]
@@ -1600,10 +1649,13 @@ extern "C" {
     pub fn mknod(pathname: *const c_char, mode: mode_t, dev: crate::dev_t) -> c_int;
     #[cfg(not(target_os = "espidf"))]
     pub fn gethostname(name: *mut c_char, len: size_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn endservent();
     pub fn getservbyname(name: *const c_char, proto: *const c_char) -> *mut servent;
     pub fn getservbyport(port: c_int, proto: *const c_char) -> *mut servent;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn getservent() -> *mut servent;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn setservent(stayopen: c_int);
     pub fn getprotobyname(name: *const c_char) -> *mut protoent;
     pub fn getprotobynumber(proto: c_int) -> *mut protoent;
@@ -1662,12 +1714,16 @@ extern "C" {
     pub fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
     pub fn localeconv() -> *mut lconv;
 
+    #[cfg(not(target_os = "phoenix"))]
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(target_os = "macos", target_arch = "x86"),
         link_name = "sem_wait$UNIX2003"
     )]
     pub fn sem_wait(sem: *mut sem_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn sem_trywait(sem: *mut sem_t) -> c_int;
+    #[cfg(not(target_os = "phoenix"))]
     pub fn sem_post(sem: *mut sem_t) -> c_int;
     #[cfg(not(all(target_os = "linux", target_env = "gnu")))] // defined in new/glibc
     #[cfg_attr(gnu_file_offset_bits64, link_name = "statvfs64")]
@@ -1798,6 +1854,7 @@ extern "C" {
         ),
         link_name = "cfgetispeed@GLIBC_2.2.5"
     )]
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(
             target_os = "linux",
@@ -1900,6 +1957,7 @@ extern "C" {
         ),
         link_name = "cfgetospeed@GLIBC_2.2.5"
     )]
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(
             target_os = "linux",
@@ -2002,6 +2060,7 @@ extern "C" {
         ),
         link_name = "cfsetispeed@GLIBC_2.2.5"
     )]
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(
             target_os = "linux",
@@ -2104,6 +2163,7 @@ extern "C" {
         ),
         link_name = "cfsetospeed@GLIBC_2.2.5"
     )]
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(
         all(
             target_os = "linux",
@@ -2179,7 +2239,7 @@ extern "C" {
 
     #[cfg(not(target_os = "l4re"))]
     pub fn grantpt(fd: c_int) -> c_int;
-    #[cfg(not(target_os = "l4re"))]
+    #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
     pub fn posix_openpt(flags: c_int) -> c_int;
     #[cfg(not(target_os = "l4re"))]
     pub fn ptsname(fd: c_int) -> *mut c_char;
@@ -2190,6 +2250,7 @@ extern "C" {
     pub fn strcasestr(cs: *const c_char, ct: *const c_char) -> *mut c_char;
     pub fn getline(lineptr: *mut *mut c_char, n: *mut size_t, stream: *mut FILE) -> ssize_t;
 
+    #[cfg(not(target_os = "phoenix"))]
     #[cfg_attr(gnu_file_offset_bits64, link_name = "lockf64")]
     pub fn lockf(fd: c_int, cmd: c_int, len: off_t) -> c_int;
 
@@ -2208,12 +2269,14 @@ cfg_if! {
         target_os = "l4re",
     )))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             #[cfg_attr(target_os = "netbsd", link_name = "__adjtime50")]
             #[cfg_attr(any(gnu_time_bits64, musl_redir_time64), link_name = "__adjtime64")]
             pub fn adjtime(delta: *const timeval, olddelta: *mut timeval) -> c_int;
         }
     } else if #[cfg(target_os = "solaris")] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn adjtime(delta: *mut timeval, olddelta: *mut timeval) -> c_int;
         }
     }
@@ -2226,6 +2289,7 @@ cfg_if! {
         target_os = "nto"
     )))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn stpncpy(dst: *mut c_char, src: *const c_char, n: size_t) -> *mut c_char;
         }
     }
@@ -2241,6 +2305,7 @@ cfg_if! {
         target_os = "l4re",
     )))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn sigqueue(pid: pid_t, sig: c_int, value: crate::sigval) -> c_int;
         }
     }
@@ -2249,6 +2314,7 @@ cfg_if! {
 cfg_if! {
     if #[cfg(not(target_os = "android"))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             #[cfg_attr(
                 all(target_os = "macos", target_arch = "x86"),
                 link_name = "confstr$UNIX2003"
@@ -2260,8 +2326,9 @@ cfg_if! {
 }
 
 cfg_if! {
-    if #[cfg(not(target_os = "aix"))] {
+    if #[cfg(not(any(target_os = "aix", target_os = "phoenix")))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn dladdr(addr: *const c_void, info: *mut Dl_info) -> c_int;
         }
     }
@@ -2278,6 +2345,7 @@ cfg_if! {
 cfg_if! {
     if #[cfg(not(any(target_env = "uclibc", target_os = "nto")))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn open_wmemstream(ptr: *mut *mut wchar_t, sizeloc: *mut size_t) -> *mut FILE;
         }
     }
@@ -2300,6 +2368,7 @@ cfg_if! {
                 all(target_os = "freebsd", not(any(freebsd11, freebsd10))),
                 link_name = "readdir_r@FBSD_1.5"
             )]
+            #[cfg(not(target_os = "phoenix"))]
             /// The 64-bit libc on Solaris and illumos only has readdir_r. If a
             /// 32-bit Solaris or illumos target is ever created, it should use
             /// __posix_readdir_r. See libc(3LIB) on Solaris or illumos:
@@ -2320,6 +2389,7 @@ cfg_if! {
 cfg_if! {
     if #[cfg(any(target_os = "nto", target_os = "qnx"))] {
         extern "C" {
+            #[cfg(not(target_os = "phoenix"))]
             pub fn readlinkat(
                 dirfd: c_int,
                 pathname: *const c_char,
@@ -2327,6 +2397,7 @@ cfg_if! {
                 bufsiz: size_t,
             ) -> c_int;
             pub fn readlink(path: *const c_char, buf: *mut c_char, bufsz: size_t) -> c_int;
+            #[cfg(not(target_os = "phoenix"))]
             pub fn pselect(
                 nfds: c_int,
                 readfds: *mut fd_set,
@@ -2340,16 +2411,16 @@ cfg_if! {
         }
     } else {
         extern "C" {
-            #[cfg(not(target_os = "l4re"))]
+            #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
             pub fn readlinkat(
                 dirfd: c_int,
                 pathname: *const c_char,
                 buf: *mut c_char,
                 bufsiz: size_t,
             ) -> ssize_t;
-            #[cfg(not(target_os = "l4re"))]
+            #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
             pub fn fmemopen(buf: *mut c_void, size: size_t, mode: *const c_char) -> *mut FILE;
-            #[cfg(not(target_os = "l4re"))]
+            #[cfg(not(any(target_os = "l4re", target_os = "phoenix")))]
             pub fn open_memstream(ptr: *mut *mut c_char, sizeloc: *mut size_t) -> *mut FILE;
             pub fn atexit(cb: extern "C" fn()) -> c_int;
             #[cfg(not(all(target_os = "linux", target_env = "gnu")))] // defined in new/glibc
@@ -2361,6 +2432,7 @@ cfg_if! {
                 all(target_os = "macos", target_arch = "x86_64"),
                 link_name = "pselect$1050"
             )]
+            #[cfg(not(target_os = "phoenix"))]
             #[cfg_attr(
                 all(target_os = "macos", target_arch = "x86"),
                 link_name = "pselect$UNIX2003"
@@ -2496,6 +2568,7 @@ cfg_if! {
                 ),
                 link_name = "cfsetspeed@GLIBC_2.2.5"
             )]
+            #[cfg(not(target_os = "phoenix"))]
             #[cfg_attr(
                 all(
                     target_os = "linux",
@@ -2522,7 +2595,7 @@ cfg_if! {
         target_os = "linux",
         target_os = "l4re",
         target_os = "android",
-        target_os = "emscripten"
+        target_os = "emscripten",
     ))] {
         mod linux_like;
         pub use self::linux_like::*;
@@ -2559,6 +2632,9 @@ cfg_if! {
     } else if #[cfg(target_os = "nuttx")] {
         mod nuttx;
         pub use self::nuttx::*;
+    } else if #[cfg(target_os = "phoenix")] {
+        mod phoenix;
+        pub use self::phoenix::*;
     } else {
         // Unknown target_os
     }

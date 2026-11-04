@@ -66,6 +66,9 @@ cfg_if! {
     } else if #[cfg(target_os = "freebsd")] {
         mod freebsd;
         pub(crate) use freebsd::*;
+    } else if #[cfg(target_os = "phoenix")] {
+        mod phoenix;
+        pub(crate) use phoenix::*;
     } else if #[cfg(target_os = "fuchsia")] {
         mod fuchsia;
         pub(crate) use fuchsia::*;
@@ -273,6 +276,8 @@ cfg_if! {
     if #[cfg(any(target_env = "musl", target_env = "ohos"))] {
         pub use signal::*;
         pub use sys::socket::*;
+    } else if #[cfg(target_os = "phoenix")] {
+        pub use sys::socket::*;
     }
 }
 
@@ -284,7 +289,8 @@ cfg_if! {
             target_os = "android",
             target_os = "emscripten",
             target_os = "l4re",
-            target_os = "linux"
+            target_os = "linux",
+            target_os = "phoenix",
         ))]
         pub use pthread::*;
         pub use unistd::*;
