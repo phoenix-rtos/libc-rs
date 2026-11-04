@@ -125,12 +125,20 @@ const CHECK_CFG_EXTRA: &[(&str, &[&str])] = &[
         "target_os",
         &[
             "switch", "aix", "ohos", "hurd", "rtems", "visionos", "nuttx", "cygwin", "qurt", "qnx",
-            "helenos",
+            "helenos", "phoenix",
         ],
     ),
     (
         "target_env",
-        &["illumos", "wasi", "aix", "ohos", "nto71_iosock"],
+        &[
+            "illumos",
+            "wasi",
+            "aix",
+            "ohos",
+            "nto71_iosock",
+            "libphoenix",
+            "libphoenix_nommu",
+        ],
     ),
     (
         "target_arch",
