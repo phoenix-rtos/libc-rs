@@ -37,7 +37,10 @@ pub(crate) fn do_semver() {
     // definitions missing on these systems. It is easier to maintain separate
     // files for them.
     if family != os
-        && !matches!(os.as_str(), "android" | "aix" | "l4re" | "nto" | "qnx")
+        && !matches!(
+            os.as_str(),
+            "android" | "aix" | "l4re" | "nto" | "qnx" | "phoenix"
+        )
         && os != "vxworks"
     {
         process_semver_file(&mut output, &mut semver_root, &family);
