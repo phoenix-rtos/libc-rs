@@ -60,6 +60,7 @@ fn do_ctest(t: &Target) {
         t if t.emscripten() => test_emscripten(t),
         t if t.freebsd() => test_freebsd(t),
         t if t.haiku() => test_haiku(t),
+        t if t.phoenix() => test_phoenix(t),
         t if t.l4re() => test_linux(t),
         t if t.linux() => test_linux(t),
         t if t.netbsd() => test_netbsd(t),
@@ -930,6 +931,260 @@ fn test_windows(t: &Target) {
 
             _ => false,
         }
+    });
+
+    ctest::generate_test(&mut cfg, "../src/lib.rs", "ctest_output.rs").unwrap();
+}
+
+fn test_phoenix(t: &Target) {
+    assert!(t.phoenix());
+
+    let has_sys_io = t.x86_32() || t.riscv64();
+    let arm = t.arm32();
+
+    let mut cfg = ctest_cfg();
+
+    headers!(
+        cfg,
+        "sys/types.h",
+        "stdint.h",
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "time.h",
+        "signal.h",
+        "sys/socket.h",
+        "sys/time.h",
+        "unistd.h",
+        "alloca.h",
+        "arpa/inet.h",
+        "arpa/telnet.h",
+        "assert.h",
+        "byteswap.h",
+        "complex.h",
+        "ctype.h",
+        "dirent.h",
+        "endian.h",
+        "err.h",
+        "errno.h",
+        "fcntl.h",
+        "features.h",
+        "fnmatch.h",
+        "getopt.h",
+        "glob.h",
+        "grp.h",
+        "ifaddrs.h",
+        "inttypes.h",
+        "libgen.h",
+        "limits.h",
+        "link.h",
+        "locale.h",
+        "malloc.h",
+        "math.h",
+        "memory.h",
+        "mntent.h",
+        "net/ethernet.h",
+        "net/if.h",
+        "net/if6.h",
+        "net/if_arp.h",
+        "net/ip6_route.h",
+        "net/route.h",
+        "netdb.h",
+        "netinet/icmp6.h",
+        "netinet/in.h",
+        "netinet/intypes.h",
+        "netinet/ip.h",
+        "netinet/ip_icmp.h",
+        "netinet/tcp.h",
+        "netinet/udp.h",
+        "netpacket/packet.h",
+        "paths.h",
+        "poll.h",
+        "pthread.h",
+        "pwd.h",
+        "regex.h",
+        "resolv.h",
+        "sched.h",
+        "setjmp.h",
+        "stdbool.h",
+        "stdio_ext.h",
+        "strings.h",
+        "sys/cdefs.h",
+        "sys/config.h",
+        "sys/features.h",
+        "sys/file.h",
+        (has_sys_io, "sys/io.h"),
+        "sys/ioctl.h",
+        "sys/minmax.h",
+        "sys/mman.h",
+        "sys/mount.h",
+        "sys/param.h",
+        "sys/reboot.h",
+        "sys/resource.h",
+        "sys/sched.h",
+        "sys/select.h",
+        "sys/sockdefs.h",
+        "sys/sockios.h",
+        "sys/socktypes.h",
+        "sys/stat.h",
+        "sys/statfs.h",
+        "sys/statvfs.h",
+        "sys/syslimits.h",
+        "sys/sysmacros.h",
+        "sys/times.h",
+        "sys/timex.h",
+        "sys/uio.h",
+        "sys/un.h",
+        "sys/utsname.h",
+        "sys/wait.h",
+        "sysexits.h",
+        "syslog.h",
+        "termios.h",
+        "ulimit.h",
+        "utime.h",
+        "wchar.h",
+    );
+
+    cfg.rename_struct_ty(|ty| match ty {
+        t if t.ends_with("_t") || matches!(t, "FILE" | "DIR" | "fd_set") => Some(t.to_string()),
+        "sigval" => Some("union sigval".to_string()),
+        _ => None,
+    });
+    cfg.rename_union_ty(|ty| ty.ends_with("_t").then(|| ty.to_string()));
+
+    cfg.skip_alias(|ty| ty.ident() == "Ioctl");
+    cfg.rename_type(|ty| (ty == "Ioctl").then(|| "unsigned long".to_string()));
+
+    cfg.rename_struct_field(|s, f| {
+        (s.ident() == "stat" && f.ident().ends_with("_nsec"))
+            .then(|| f.ident().replace("e_nsec", ".tv_nsec"))
+    });
+
+    cfg.skip_alias(|ty| matches!(ty.ident(), "pthread_key_t" | "sighandler_t"));
+
+    cfg.skip_struct(|s| {
+        matches!(
+            s.ident(),
+            "ip_mreq" | "ipv6_mreq"
+                | "DIR"
+                | "FILE"
+                | "timezone"
+        )
+    });
+
+    cfg.skip_alias(|ty| {
+        matches!(
+            ty.ident(),
+            "blkcnt64_t"
+                | "fpos64_t"
+                | "fsblkcnt64_t"
+                | "fsfilcnt64_t"
+                | "ino64_t"
+                | "off64_t"
+                | "rlim64_t"
+                | "rlimit64"
+                | "statvfs64"
+                | "dirent64"
+                | "stat64"
+        )
+    });
+    cfg.skip_struct(|s| matches!(s.ident(), "dirent64" | "stat64" | "statvfs64"));
+
+    cfg.skip_struct_field(|s, f| {
+        match (s.ident(), f.ident()) {
+            ("dirent", "d_name") => true,
+            _ => false,
+        }
+    });
+
+    cfg.skip_struct_field_type(|s, f| {
+        matches!(
+            (s.ident(), f.ident()),
+            ("ifreq", "ifr_ifru") | ("ifconf", "ifc_ifcu") | ("sigaction", "sa_sigaction")
+        )
+    });
+
+    const UNDEFINED_CONSTANTS: &[&str] = &[
+        "AF_LOCAL",
+        "AT_EMPTY_PATH",
+        "AT_FDCWD",
+        "AT_HWCAP",
+        "AT_HWCAP2",
+        "AT_MINSIGSTKSZ",
+        "AT_REMOVEDIR",
+        "AT_SYMLINK_NOFOLLOW",
+        "CLD_CONTINUED",
+        "CLD_DUMPED",
+        "CLD_EXITED",
+        "CLD_KILLED",
+        "CLD_STOPPED",
+        "CLD_TRAPPED",
+        "CTL_KERN",
+        "EDQUOT",
+        "ESTALE",
+        "FIOCLEX",
+        "GRND_INSECURE",
+        "GRND_NONBLOCK",
+        "MAP_STACK",
+        "MSG_CMSG_CLOEXEC",
+        "MSG_CTRUNC",
+        "MSG_TRUNC",
+        "O_DIRECTORY",
+        "O_NOFOLLOW",
+        "PIDFD_INFO_EXIT",
+        "PIDFD_INFO_PID",
+        "PIPE_BUF",
+        "POSIX_SPAWN_SETPGROUP",
+        "POSIX_SPAWN_SETSID",
+        "POSIX_SPAWN_SETSIGDEF",
+        "RTLD_DEFAULT",
+        "RTLD_LAZY",
+        "RTLD_LOCAL",
+        "SCM_CREDENTIALS",
+        "SIGPOLL",
+        "SIGPWR",
+        "SIGSTKFLT",
+        "SIGSTKSZ",
+        "SOMAXCONN",
+        "SO_MARK",
+        "SO_PASSCRED",
+        "SYS_futex",
+        "SYS_pidfd_open",
+        "SYS_pidfd_send_signal",
+        "TCP_DEFER_ACCEPT",
+        "TCP_QUICKACK",
+        "UTIME_OMIT",
+        "WEXITED",
+        "_CS_PATH",
+        "_SC_GETPW_R_SIZE_MAX",
+        "_SC_HOST_NAME_MAX",
+        "_SC_NPROCESSORS_ONLN",
+        "_SC_THREAD_STACK_MIN",
+        "ATF_COM",
+        "ATF_PERM",
+        "ATF_PUBL",
+        "ATF_USETRAILERS",
+        "GRPQUOTA",
+        "USRQUOTA",
+        "PRIO_MAX",
+        "PRIO_MIN",
+    ];
+
+    cfg.skip_const(|c| {
+        matches!(
+            c.ident(),
+            "IP_ADD_MEMBERSHIP"
+                | "IP_DROP_MEMBERSHIP"
+                | "IP_MULTICAST_LOOP"
+                | "IPV6_ADD_MEMBERSHIP"
+                | "IPV6_DROP_MEMBERSHIP"
+        ) || UNDEFINED_CONSTANTS.contains(&c.ident())
+    });
+
+    cfg.skip_roundtrip(move |s| match s {
+        // FIXME(phoenix): on 32-bit ARM, passing this by value between Rust and C faults.
+        "sockaddr_storage" if arm => true,
+        _ => false,
     });
 
     ctest::generate_test(&mut cfg, "../src/lib.rs", "ctest_output.rs").unwrap();

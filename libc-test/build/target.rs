@@ -266,6 +266,10 @@ impl Target {
         self.os == "openbsd"
     }
 
+    pub fn phoenix(&self) -> bool {
+        self.os == "phoenix"
+    }
+
     pub fn qurt(&self) -> bool {
         self.os == "qurt"
     }
